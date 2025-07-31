@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-a<head>
+<html lang="en">
+<head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Advanced Calculator</title>
@@ -49,6 +50,10 @@ a<head>
         .display-text {
             @apply w-full bg-transparent text-right text-gray-400 text-xl h-8 overflow-x-auto overflow-y-hidden whitespace-nowrap;
         }
+        /* Style for the contenteditable display to remove focus outline */
+        .display-text[contenteditable]:focus {
+            outline: 0px solid transparent;
+        }
         .display-input {
             @apply w-full text-right text-xl h-9 rounded-md focus:ring-0 focus:outline-none p-1;
             background-color: #000 !important;
@@ -72,23 +77,22 @@ a<head>
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
-
     <div class="w-full max-w-5xl mx-auto bg-white rounded-2xl shadow-2xl p-6 md:p-8 grid md:grid-cols-2 gap-8">
         <!-- Calculator Section -->
         <div class="md:col-span-1">
             <h1 class="text-3xl font-bold text-gray-800 mb-4">Calculator</h1>
             <!-- Display -->
             <div class="bg-black text-white rounded-lg p-4 mb-6 shadow-inner text-right">
-                <div id="expression-display-text" class="display-text"></div>
+                <div id="expression-display-text" class="display-text" contenteditable="true" spellcheck="false"></div>
                 <input type="text" id="expression-display-input" class="display-input hidden" autocomplete="off">
                 <div id="live-result-display" class="text-4xl font-semibold min-h-[3rem]">0</div>
             </div>
             <!-- Buttons -->
             <div class="calculator-grid">
-                <button class="btn btn-func" onclick="appendString('(')">(</button>
-                <button class="btn btn-func" onclick="appendString(')')">)</button>
-                <button class="btn btn-operator" onclick="appendOperator('^')">^</button>
+                <button class="btn btn-func" onclick="changeRoundingPrecision()">Round</button>
                 <button class="btn btn-func" onclick="appendString('Math.sqrt(')">sqrt</button>
+                <button class="btn btn-operator" onclick="appendOperator('^')">^</button>
+                <button class="btn btn-func" onclick="appendString('(')">(</button>
                 <button class="btn btn-action" onclick="clearAll()">AC</button>
                 <button class="btn btn-action" onclick="deleteLast()">C</button>
                 <button class="btn btn-operator" onclick="appendOperator('/')">÷</button>
@@ -109,8 +113,8 @@ a<head>
                 <button class="btn btn-number" onclick="appendNumber('.')">.</button>
             </div>
              <div id="results-container" class="mt-6 p-4 bg-gray-50 rounded-lg shadow hidden">
-                <h3 class="text-lg font-semibold text-gray-700 mb-3">Result Precision</h3>
-                <div id="decimal-places" class="space-y-2 text-gray-600"></div>
+                <h3 class="text-lg font-semibold text-gray-700 mb-3">Use Result in Next Operation</h3>
+                <div id="decimal-places" class="space-y-1 text-gray-600"></div>
             </div>
         </div>
         <!-- History Section -->
@@ -122,7 +126,7 @@ a<head>
                         <tr>
                             <th class="p-2 font-semibold text-gray-600 w-3/5">Calculation</th>
                             <th class="p-2 font-semibold text-gray-600 w-2/5">Result</th>
-                            <th class="p-2 w-10"></th>
+                            <th class="p-2"></th>
                         </tr>
                     </thead>
                     <tbody id="history-table-body"></tbody>
@@ -133,6 +137,7 @@ a<head>
         </div>
     </div>
     <script>
+        // DOM Element References
         const expressionDisplayText = document.getElementById('expression-display-text');
         const expressionDisplayInput = document.getElementById('expression-display-input');
         const liveResultDisplay = document.getElementById('live-result-display');
@@ -142,27 +147,41 @@ a<head>
         const noHistoryMessage = document.getElementById('no-history');
         const resultsContainer = document.getElementById('results-container');
         const decimalPlacesContainer = document.getElementById('decimal-places');
+
+        // State Variables
         let currentExpression = '';
         let history = [];
         let editingHistoryId = null;
         let isResultOnScreen = false;
+        let activeRounding = null; 
+        let lastFullResult = null; 
+        let roundingDecimalPlaces = null;
+
+        // --- Core Calculator Logic ---
+
         function appendNumber(number) {
             if (isResultOnScreen) {
                 currentExpression = '';
                 isResultOnScreen = false;
+                activeRounding = null;
+                lastFullResult = null;
             }
-            if (number === '.' && currentExpression.split(/[\+\-\*\/]/).pop().includes('.')) return;
+            if (number === '.' && currentExpression.split(/[\+\-\*\/^]/).pop().includes('.')) return;
             currentExpression += number;
             updateDisplay();
         }
+
         function appendOperator(operator) {
-            isResultOnScreen = false;
+            if (isResultOnScreen) {
+                isResultOnScreen = false;
+            }
             const lastChar = currentExpression.slice(-1);
             if (currentExpression === '' && operator !== '-') return;
             if (/[\+\-\*\/^]$/.test(currentExpression)) return;
             currentExpression += operator;
             updateDisplay();
         }
+
         function appendString(str) {
             if (isResultOnScreen) {
                 if (str === 'Math.sqrt(') {
@@ -171,33 +190,46 @@ a<head>
                     currentExpression = '(';
                 }
                 isResultOnScreen = false;
+                activeRounding = null;
+                lastFullResult = null;
             } else {
                 currentExpression += str;
             }
             updateDisplay();
         }
+
         function deleteLast() {
             if (isResultOnScreen) return;
             currentExpression = currentExpression.slice(0, -1);
             updateDisplay();
         }
+
         function clearAll() {
             currentExpression = '';
             editingHistoryId = null;
             isResultOnScreen = false;
+            activeRounding = null;
+            lastFullResult = null;
+            roundingDecimalPlaces = null;
             expressionDisplayText.classList.remove('hidden');
             expressionDisplayInput.classList.add('hidden');
             resultsContainer.classList.add('hidden');
             updateDisplay();
         }
+
+        // --- Display Updates ---
+
         function updateDisplay() {
             let display = currentExpression.replace(/\*/g, '×').replace(/\//g, '÷');
             expressionDisplayText.textContent = display || '0';
             liveUpdate();
         }
+
         function sanitizeForCalculation(expr) {
+            // This function prepares the expression string for evaluation by `new Function()`
             return expr.replace(/×/g, '*').replace(/÷/g, '/').replace(/\^/g, '**');
         }
+
         function liveUpdate() {
             if (isResultOnScreen) return;
             let expr = editingHistoryId ? expressionDisplayInput.value : currentExpression;
@@ -207,13 +239,12 @@ a<head>
             }
             try {
                 let sanitizedExpression = sanitizeForCalculation(expr);
-                const match = sanitizedExpression.match(/.*(?=[\+\-\*\/])/);
-                let expressionToEvaluate = match ? match[0] : sanitizedExpression;
+                let expressionToEvaluate = sanitizedExpression;
+                // Don't evaluate if the expression ends with an operator
                 if (/[\+\-\*\/]$/.test(sanitizedExpression)) {
                     expressionToEvaluate = sanitizedExpression.slice(0, -1);
-                } else {
-                    expressionToEvaluate = sanitizedExpression;
                 }
+                // Basic check for parenthesis balance
                 const openParen = (expressionToEvaluate.match(/\(/g) || []).length;
                 const closeParen = (expressionToEvaluate.match(/\)/g) || []).length;
                 if (openParen > closeParen) {
@@ -230,6 +261,9 @@ a<head>
                 liveResultDisplay.textContent = '...';
             }
         }
+
+        // --- Calculation and Result Handling ---
+
         function calculate() {
             let exprToCalc = editingHistoryId ? expressionDisplayInput.value : currentExpression;
             let sanitizedExpression = sanitizeForCalculation(exprToCalc);
@@ -237,18 +271,27 @@ a<head>
             try {
                 const result = new Function('return ' + sanitizedExpression)();
                 let finalResultToDisplay = result;
+                
+                let displayExpressionForHistory = sanitizedExpression;
+                if (activeRounding && sanitizedExpression.startsWith(activeRounding.rounded)) {
+                    const operationPart = sanitizedExpression.substring(activeRounding.rounded.length);
+                    displayExpressionForHistory = `round(${String(activeRounding.original)}, ${activeRounding.dp})${operationPart}`;
+                }
+
                 if (editingHistoryId !== null) {
                     const itemIndex = history.findIndex(item => item.id === editingHistoryId);
                     if (itemIndex > -1) {
                         const editedItem = history[itemIndex];
                         editedItem.expression = sanitizedExpression;
                         editedItem.result = result;
+                        editedItem.displayExpression = sanitizedExpression; // Keep it simple on edit
                         editedItem.highlight = true;
+
                         if (itemIndex > 0) {
-                            const prevItemResultStr = String(history[itemIndex - 1].result);
-                            if (sanitizedExpression.startsWith(prevItemResultStr)) {
+                            const prevResultStr = String(history[itemIndex - 1].result);
+                            if (sanitizedExpression.startsWith(prevResultStr)) {
                                 editedItem.isContinuation = true;
-                                editedItem.operationPart = sanitizedExpression.substring(prevItemResultStr.length);
+                                editedItem.operationPart = sanitizedExpression.substring(prevResultStr.length);
                             } else {
                                 editedItem.isContinuation = false;
                                 editedItem.operationPart = '';
@@ -259,15 +302,20 @@ a<head>
                         }
                         const lastAffectedIndex = updateSubsequentHistory(itemIndex);
                         finalResultToDisplay = history[lastAffectedIndex].result;
-                        renderHistory();
                     }
                 } else {
-                    addToHistory(sanitizedExpression, result);
+                    addToHistory(sanitizedExpression, result, displayExpressionForHistory);
                 }
+
+                renderHistory();
                 displayDecimalPlaces(result);
                 currentExpression = String(finalResultToDisplay);
                 editingHistoryId = null;
                 isResultOnScreen = true;
+                lastFullResult = result; // Store for rounding cycle
+                roundingDecimalPlaces = null; // Reset rounding state for the next calculation
+                activeRounding = null;
+                
                 expressionDisplayText.classList.remove('hidden');
                 expressionDisplayInput.classList.add('hidden');
                 updateDisplay();
@@ -275,44 +323,187 @@ a<head>
                 resultsContainer.classList.remove('hidden');
             } catch (error) {
                 liveResultDisplay.textContent = 'Error';
-                currentExpression = '';
-                editingHistoryId = null;
-                expressionDisplayText.classList.remove('hidden');
-                expressionDisplayInput.classList.add('hidden');
+                clearAll();
                 updateDisplay();
             }
         }
+
+        function useResult(original, rounded, dp) {
+            currentExpression = String(rounded);
+            if (dp !== null) {
+                activeRounding = { original, rounded: String(rounded), dp };
+            } else {
+                activeRounding = null;
+            }
+            isResultOnScreen = false;
+            resultsContainer.classList.add('hidden');
+            updateDisplay();
+            liveResultDisplay.textContent = formatResult(rounded);
+        }
+        
+        function countDecimalPlaces(num) {
+            if (!Number.isFinite(num) || num % 1 === 0) {
+                return 0;
+            }
+            // Convert to string and get the part after the decimal point
+            return num.toString().split('.')[1].length;
+        }
+
+        function changeRoundingPrecision() {
+            if (!isResultOnScreen || lastFullResult === null || !Number.isFinite(lastFullResult) || lastFullResult % 1 === 0) {
+                return;
+            }
+
+            let nextDp;
+            const maxDp = countDecimalPlaces(lastFullResult);
+
+            if (roundingDecimalPlaces === null) {
+                // First click: Start with the full number of decimal places.
+                nextDp = maxDp;
+            } else {
+                // Subsequent clicks: Reduce by one.
+                nextDp = roundingDecimalPlaces - 1;
+            }
+            
+            // Update the state for the *next* click
+            roundingDecimalPlaces = nextDp;
+
+            let resultToDisplay;
+            if (roundingDecimalPlaces < 0) {
+                // Cycle back to the full result.
+                roundingDecimalPlaces = null; // Reset for the next cycle.
+                resultToDisplay = lastFullResult;
+                activeRounding = null;
+            } else {
+                resultToDisplay = Number(lastFullResult).toFixed(roundingDecimalPlaces);
+                activeRounding = { original: lastFullResult, rounded: resultToDisplay, dp: roundingDecimalPlaces };
+            }
+            
+            currentExpression = String(resultToDisplay);
+            expressionDisplayText.textContent = formatResult(resultToDisplay);
+            liveResultDisplay.textContent = formatResult(resultToDisplay);
+        }
+
+        function displayDecimalPlaces(result) {
+            decimalPlacesContainer.innerHTML = '';
+
+            // If result is not a finite number, just display it and stop.
+            if (!Number.isFinite(result)) {
+                const nonFiniteResultDiv = document.createElement('div');
+                nonFiniteResultDiv.className = 'flex justify-between items-center py-1';
+                nonFiniteResultDiv.innerHTML = `
+                    <div>
+                        <span class="font-semibold">Result:</span>
+                        <span class="font-mono ml-2 text-blue-600">${formatResult(result)}</span>
+                    </div>
+                `;
+                decimalPlacesContainer.appendChild(nonFiniteResultDiv);
+                return;
+            }
+
+            const places = [10, 8, 5, 4, 3, 2, 1, 0].filter(dp => {
+                const actualDp = countDecimalPlaces(result);
+                return dp <= actualDp;
+            });
+            
+            const fullResultDiv = document.createElement('div');
+            fullResultDiv.className = 'flex justify-between items-center py-1';
+            fullResultDiv.innerHTML = `
+                <div>
+                    <span class="font-semibold">Full:</span>
+                    <span class="font-mono ml-2 text-blue-600">${formatResult(result)}</span>
+                </div>
+                <button class="px-3 py-1 bg-indigo-500 text-white text-xs font-semibold rounded-md hover:bg-indigo-600 transition-colors" onclick="useResult(${result}, ${result}, null)">Use</button>
+            `;
+            decimalPlacesContainer.appendChild(fullResultDiv);
+
+            places.forEach(dp => {
+                const dpResult = Number(result).toFixed(dp);
+                const div = document.createElement('div');
+                div.className = 'flex justify-between items-center py-1';
+                div.innerHTML = `
+                     <div>
+                         <span class="text-sm">${dp} dec:</span>
+                         <span class="font-mono ml-2">${formatDecimalString(dpResult)}</span>
+                     </div>
+                    <button class="px-3 py-1 bg-indigo-500 text-white text-xs font-semibold rounded-md hover:bg-indigo-600 transition-colors" onclick="useResult(${result}, '${dpResult}', ${dp})">Use</button>
+                `;
+                decimalPlacesContainer.appendChild(div);
+            });
+        }
+
+        // --- Formatting Helpers ---
+
         function formatResult(number) {
             if (isNaN(number)) return 'Error';
-            return parseFloat(Number(number).toPrecision(15)).toLocaleString('en-US', {
+
+            // Using Number() handles both number and string inputs.
+            // toLocaleString is a more direct and robust way to format for display,
+            // avoiding issues with toPrecision().
+            return Number(number).toLocaleString('en-US', {
                 maximumFractionDigits: 10
             });
         }
+
         function formatDecimalString(numStr) {
             const [integerPart, decimalPart] = numStr.split('.');
             const formattedIntegerPart = Number(integerPart).toLocaleString('en-US');
             return decimalPart !== undefined ? `${formattedIntegerPart}.${decimalPart}` : formattedIntegerPart;
         }
-        function addToHistory(expression, result) {
+
+        // --- Clipboard Helper ---
+        function copyToClipboard(text, element) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            textarea.setAttribute('readonly', '');
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                // Provide visual feedback on the button that was clicked
+                if (element) {
+                    const originalIcon = element.innerHTML;
+                    element.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-check-lg text-green-500" viewBox="0 0 16 16">
+                          <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425a.247.247 0 0 1 .02-.022z"/>
+                        </svg>
+                    `;
+                    setTimeout(() => {
+                        element.innerHTML = originalIcon;
+                    }, 1500);
+                }
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+            document.body.removeChild(textarea);
+        }
+
+
+        // --- History Management ---
+
+        function addToHistory(calcExpression, result, displayExpression) {
             let isContinuation = false;
             let operationPart = '';
-            if (history.length > 0) {
+            if (history.length > 0 && !editingHistoryId) {
                 const prevResultStr = String(history[history.length - 1].result);
-                if (expression.startsWith(prevResultStr)) {
+                if (calcExpression.startsWith(prevResultStr)) {
                     isContinuation = true;
-                    operationPart = expression.substring(prevResultStr.length);
+                    operationPart = calcExpression.substring(prevResultStr.length);
                 }
             }
-            const historyItem = {
-                id: Date.now(),
-                expression,
-                result,
-                isContinuation,
-                operationPart
+            const historyItem = { 
+                id: Date.now(), 
+                expression: calcExpression, 
+                displayExpression: displayExpression || calcExpression,
+                result, 
+                isContinuation, 
+                operationPart 
             };
             history.push(historyItem);
-            renderHistory();
         }
+
         function renderHistory() {
             historyTableBody.innerHTML = '';
             if (history.length === 0) {
@@ -333,12 +524,20 @@ a<head>
                     }
                     tr.dataset.id = item.id;
                     tr.ondblclick = () => loadFromHistory(item.id);
-                    const displayExpression = item.expression.replace(/\*/g, '×').replace(/\//g, '÷').replace(/\*\*/g, '^');
+                    const displayExpression = item.displayExpression.replace(/\*/g, '×').replace(/\//g, '÷').replace(/\*\*/g, '^');
                     tr.innerHTML = `
                         <td class="p-2 break-words text-gray-700">${displayExpression}</td>
                         <td class="p-2 font-semibold text-blue-700 break-words">${formatResult(item.result)}</td>
-                        <td class="p-2 text-center">
-                            <button class="text-red-500 hover:text-red-700 font-bold" onclick="deleteHistoryItem(event, ${item.id})">X</button>
+                        <td class="p-2">
+                            <div class="flex justify-center items-center space-x-3">
+                                <button class="text-gray-400 hover:text-blue-500 transition-colors" title="Copy result" onclick="copyToClipboard('${item.result}', this)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                        <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+                                        <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h3zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3z"/>
+                                    </svg>
+                                </button>
+                                <button class="text-red-400 hover:text-red-600 font-bold transition-colors" title="Delete entry" onclick="deleteHistoryItem(event, ${item.id})">X</button>
+                            </div>
                         </td>
                     `;
                     historyTableBody.appendChild(tr);
@@ -346,6 +545,7 @@ a<head>
                 historyPanel.scrollTop = historyPanel.scrollHeight;
             }
         }
+
         function loadFromHistory(id) {
             const item = history.find(i => i.id === id);
             if (item) {
@@ -360,83 +560,98 @@ a<head>
                 liveUpdate();
             }
         }
+
         function updateSubsequentHistory(startIndex) {
             let lastIndex = startIndex;
             for (let i = startIndex + 1; i < history.length; i++) {
                 if (history[i].isContinuation) {
                     const prevItemNewResult = history[i - 1].result;
                     const newExpression = String(prevItemNewResult) + history[i].operationPart;
-                    const newResult = new Function('return ' + sanitizeForCalculation(newExpression))();
-                    history[i].expression = newExpression;
-                    history[i].result = newResult;
-                    history[i].highlight = true;
-                    lastIndex = i;
+                    try {
+                        const newResult = new Function('return ' + sanitizeForCalculation(newExpression))();
+                        history[i].expression = newExpression;
+                        history[i].result = newResult;
+                        history[i].displayExpression = newExpression; // Update display to reflect new reality
+                        history[i].highlight = true;
+                        lastIndex = i;
+                    } catch (e) {
+                        // If an update fails, the chain is broken. Stop propagating changes.
+                        history[i].isContinuation = false;
+                        break;
+                    }
                 } else {
+                    // Chain is broken
                     break;
                 }
             }
             return lastIndex;
         }
+
         function deleteHistoryItem(event, id) {
             event.stopPropagation();
             const itemIndex = history.findIndex(item => item.id === id);
             if (itemIndex > -1) {
                 history.splice(itemIndex, 1);
+                
+                // If there's an item that came after the deleted one, it's no longer a continuation.
                 if (itemIndex < history.length) {
-                    const nextItem = history[itemIndex];
-                    const prevItem = itemIndex > 0 ? history[itemIndex - 1] : null;
-                    if (prevItem && nextItem.expression.startsWith(String(prevItem.result))) {
-                        nextItem.isContinuation = true;
-                        nextItem.operationPart = nextItem.expression.substring(String(prevItem.result).length);
-                    } else {
-                        nextItem.isContinuation = false;
-                        nextItem.operationPart = '';
-                    }
+                    history[itemIndex].isContinuation = false;
+                    history[itemIndex].operationPart = '';
                 }
-                if (itemIndex > 0) {
-                    updateSubsequentHistory(itemIndex - 1);
-                } else if (history.length > 0) {
-                    updateSubsequentHistory(-1);
-                }
+                
                 renderHistory();
             }
         }
+
         function clearHistory() {
             history = [];
             renderHistory();
         }
-        function displayDecimalPlaces(result) {
-            decimalPlacesContainer.innerHTML = '';
-            const places = [5, 4, 3, 2, 1, 0];
-            const fullResult = document.createElement('div');
-            fullResult.className = 'flex justify-between';
-            fullResult.innerHTML = `<span>Full Result:</span><span class="font-mono">${formatResult(result)}</span>`;
-            decimalPlacesContainer.appendChild(fullResult);
-            places.forEach(dp => {
-                const dpResult = Number(result).toFixed(dp);
-                const div = document.createElement('div');
-                div.className = 'flex justify-between';
-                div.innerHTML = `<span>${dp} Decimal Places:</span><span class="font-mono">${formatDecimalString(dpResult)}</span>`;
-                decimalPlacesContainer.appendChild(div);
-            });
-        }
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').then(registration => {
-                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
-                }, err => {
-                    console.log('ServiceWorker registration failed: ', err);
-                });
-            });
-        }
+
+        // --- Event Listeners ---
         expressionDisplayInput.addEventListener('input', liveUpdate);
+
+        // A single, global paste handler to catch all paste events (right-click, Ctrl+V, etc.)
+        document.addEventListener('paste', (e) => {
+            // If the user is editing the history input, let that input handle the paste natively.
+            if (document.activeElement === expressionDisplayInput) {
+                return;
+            }
+
+            // Otherwise, we handle the paste for the main calculator display.
+            e.preventDefault();
+            const pasteData = (e.clipboardData || window.clipboardData).getData('text/plain');
+            
+            if (!pasteData) return;
+
+            if (isResultOnScreen) {
+                currentExpression = '';
+                isResultOnScreen = false;
+                activeRounding = null;
+                lastFullResult = null;
+            }
+
+            currentExpression += pasteData;
+            updateDisplay();
+        });
+
+        // Global keydown listener for keyboard shortcuts
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Tab') return;
+            // Allow default behavior for Tab key and standard copy/cut/paste shortcuts
+            // to avoid interfering with the new paste handler and browser functionality.
+            if (e.key === 'Tab' || ((e.ctrlKey || e.metaKey) && ['c', 'x', 'v'].includes(e.key.toLowerCase()))) {
+                return;
+            }
+
+            // If editing history, let the input field handle keys
             if (document.activeElement === expressionDisplayInput) {
                 if (e.key === 'Enter') calculate();
                 return;
             }
+
+            // Prevent default for all other keys to manually control the calculator
             e.preventDefault();
+            
             if (e.key >= '0' && e.key <= '9') appendNumber(e.key);
             else if (e.key === '.') appendNumber('.');
             else if (['+', '-', '*', '/', '^'].includes(e.key)) appendOperator(e.key);
@@ -445,6 +660,8 @@ a<head>
             else if (e.key === 'Backspace') deleteLast();
             else if (e.key.toLowerCase() === 'c' || e.key === 'Escape') clearAll();
         });
+
+        // --- Initial Load ---
         updateDisplay();
         renderHistory();
     </script>
