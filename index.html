@@ -699,17 +699,6 @@
             permissionModalOverlay.classList.add('hidden');
         });
 
-        window.addEventListener('beforeunload', (e) => {
-            // Check if the user has not yet made a choice about saving history
-            // and if there is history that would be lost.
-            if (localStorage.getItem('saveHistoryPermission') === null && history.length > 0) {
-                // This triggers the browser's built-in "Are you sure you want to leave?" confirmation dialog.
-                e.preventDefault();
-                // This is required for some older browsers to show the confirmation.
-                e.returnValue = 'You have unsaved history. Please confirm you want to leave.';
-            }
-        });
-
         // --- Initial Load ---
         function initializeApp() {
             // Only load history if the user has previously given permission.
