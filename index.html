@@ -136,6 +136,19 @@
             <button class="w-full mt-4 py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors" onclick="clearHistory()">Clear History</button>
         </div>
     </div>
+
+    <!-- History Permission Modal -->
+    <div id="permission-modal-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div id="permission-modal" class="bg-white p-8 rounded-lg shadow-xl max-w-sm w-full">
+            <h3 class="text-lg font-bold mb-4">Save History?</h3>
+            <p class="text-gray-600 mb-6">Do you want to save your calculation history for future visits?</p>
+            <div class="flex justify-end space-x-4">
+                <button id="decline-save" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">No, Thanks</button>
+                <button id="confirm-save" class="px-4 py-2 bg-purple-500 text-white rounded-md hover:bg-purple-600">Yes, Save</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // DOM Element References
         const expressionDisplayText = document.getElementById('expression-display-text');
@@ -147,6 +160,9 @@
         const noHistoryMessage = document.getElementById('no-history');
         const resultsContainer = document.getElementById('results-container');
         const decimalPlacesContainer = document.getElementById('decimal-places');
+        const permissionModalOverlay = document.getElementById('permission-modal-overlay');
+        const confirmSaveBtn = document.getElementById('confirm-save');
+        const declineSaveBtn = document.getElementById('decline-save');
 
         // State Variables
         let currentExpression = '';
@@ -305,6 +321,11 @@
                     }
                 } else {
                     addToHistory(sanitizedExpression, result, displayExpressionForHistory);
+                }
+                
+                // After the first successful calculation, check if we need to ask for permission.
+                if (localStorage.getItem('saveHistoryPermission') === null) {
+                    permissionModalOverlay.classList.remove('hidden');
                 }
 
                 renderHistory();
@@ -544,6 +565,10 @@
                 });
                 historyPanel.scrollTop = historyPanel.scrollHeight;
             }
+            // Save history to localStorage only if permission has been granted.
+            if (localStorage.getItem('saveHistoryPermission') === 'true') {
+                localStorage.setItem('calculatorHistory', JSON.stringify(history));
+            }
         }
 
         function loadFromHistory(id) {
@@ -659,11 +684,40 @@
             else if (e.key === 'Enter' || e.key === '=') calculate();
             else if (e.key === 'Backspace') deleteLast();
             else if (e.key.toLowerCase() === 'c' || e.key === 'Escape') clearAll();
+            else if (e.key === 'Delete') clearAll();
+        });
+
+        confirmSaveBtn.addEventListener('click', () => {
+            localStorage.setItem('saveHistoryPermission', 'true');
+            permissionModalOverlay.classList.add('hidden');
+            // After permission is granted, save the current history.
+            renderHistory(); 
+        });
+
+        declineSaveBtn.addEventListener('click', () => {
+            localStorage.setItem('saveHistoryPermission', 'false');
+            permissionModalOverlay.classList.add('hidden');
         });
 
         // --- Initial Load ---
-        updateDisplay();
-        renderHistory();
+        function initializeApp() {
+            // Only load history if the user has previously given permission.
+            if (localStorage.getItem('saveHistoryPermission') === 'true') {
+                const savedHistory = localStorage.getItem('calculatorHistory');
+                if (savedHistory) {
+                    try {
+                        history = JSON.parse(savedHistory);
+                    } catch (e) {
+                        console.error("Error parsing history from localStorage", e);
+                        history = []; // Reset to empty array if data is corrupted
+                    }
+                }
+            }
+            updateDisplay();
+            renderHistory();
+        }
+
+        initializeApp();
     </script>
 </body>
 </html>
